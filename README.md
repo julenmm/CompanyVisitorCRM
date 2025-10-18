@@ -1,6 +1,11 @@
 # CompanyMap - Full Stack Application
 
-A full-stack web application with React frontend, Django REST API backend, and PostgreSQL database, all containerized with Docker.
+A full-stack web application with React frontend, Django REST API backend, and PostgreSQL database, containerized with Docker.
+
+CompanyVisitorCRM is designed to function as an intelligent visitor relationship management platform. Users can upload lists of client company domains, which are then processed through data pipelines to automatically identify and geolocate each company’s offices. When traveling to a new region, users can instantly see which clients or prospects are nearby, allowing them to strategically plan visits and maximize trip efficiency.
+
+This application addresses a major challenge for organizations that manage numerous B2B relationships across multiple regions or countries. By centralizing geospatial company data—something traditional CRM or MSA systems lack at an international scale—CompanyVisitorCRM enables smarter, data-driven business travel and relationship management.
+
 
 ## Architecture
 

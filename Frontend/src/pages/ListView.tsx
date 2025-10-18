@@ -1,52 +1,70 @@
 import React, { useEffect, useState } from 'react';
 import { SearchIcon, FilterIcon, ChevronDownIcon, MapPinIcon, UsersIcon, TagIcon, ArrowUpDownIcon } from 'lucide-react';
-import { mockCompanies, mockPeople, mockTags, Company, Person, Tag, getPeopleByCompanyId } from '../utils/mockData';
+import { getAllCompanies, getAllTags, Company, Tag } from '../utils/api';
 const ListView: React.FC = () => {
-  const [companies, setCompanies] = useState<Company[]>(mockCompanies);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [sortField, setSortField] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  // Filter and sort companies
+
+  // Load data from API
   useEffect(() => {
-    let filtered = [...mockCompanies];
-    // Apply search filter
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        const [companiesData, tagsData] = await Promise.all([
+          getAllCompanies(),
+          getAllTags()
+        ]);
+        setCompanies(companiesData);
+        setTags(tagsData);
+      } catch (error) {
+        console.error('Error loading data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadData();
+  }, []);
+  // Filter and sort companies
+  const filteredCompanies = companies.filter(company => {
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(company => company.name.toLowerCase().includes(term));
+      if (!company.name.toLowerCase().includes(term)) return false;
     }
-    // Apply tag filter
     if (selectedTags.length > 0) {
-      filtered = filtered.filter(company => selectedTags.some(tagId => company.tags.includes(tagId)));
+      if (!selectedTags.some(tagId => company.tags.includes(tagId))) return false;
     }
-    // Apply sorting
-    if (sortField) {
-      filtered.sort((a, b) => {
-        let valueA, valueB;
-        switch (sortField) {
-          case 'name':
-            valueA = a.name;
-            valueB = b.name;
-            break;
-          case 'locations':
-            valueA = a.locations.length;
-            valueB = b.locations.length;
-            break;
-          case 'people':
-            valueA = a.people.length;
-            valueB = b.people.length;
-            break;
-          default:
-            return 0;
-        }
-        if (valueA < valueB) return sortDirection === 'asc' ? -1 : 1;
-        if (valueA > valueB) return sortDirection === 'asc' ? 1 : -1;
+    return true;
+  }).sort((a, b) => {
+    if (!sortField) return 0;
+    let valueA, valueB;
+    switch (sortField) {
+      case 'name':
+        valueA = a.name;
+        valueB = b.name;
+        break;
+      case 'locations':
+        valueA = a.locations.length;
+        valueB = b.locations.length;
+        break;
+      case 'people':
+        valueA = a.people.length;
+        valueB = b.people.length;
+        break;
+      default:
         return 0;
-      });
     }
-    setCompanies(filtered);
-  }, [searchTerm, selectedTags, sortField, sortDirection]);
+    if (valueA < valueB) return sortDirection === 'asc' ? -1 : 1;
+    if (valueA > valueB) return sortDirection === 'asc' ? 1 : -1;
+    return 0;
+  });
+
   const toggleTag = (tagId: string) => {
     setSelectedTags(prev => prev.includes(tagId) ? prev.filter(id => id !== tagId) : [...prev, tagId]);
   };
@@ -95,7 +113,7 @@ const ListView: React.FC = () => {
                   <h3 className="font-medium text-gray-700">Filter by Tags</h3>
                 </div>
                 <div className="p-3 max-h-60 overflow-y-auto">
-                  {mockTags.map(tag => <div key={tag.id} className="flex items-center mb-2">
+                  {tags.map(tag => <div key={tag.id} className="flex items-center mb-2">
                       <input type="checkbox" id={`tag-${tag.id}`} checked={selectedTags.includes(tag.id)} onChange={() => toggleTag(tag.id)} className="mr-2" />
                       <label htmlFor={`tag-${tag.id}`} className="flex items-center">
                         <span className={`w-3 h-3 rounded-full mr-2 ${getTagColor(tag.priority)}`}></span>
@@ -129,9 +147,17 @@ const ListView: React.FC = () => {
           </div>
           {/* Table Body */}
           <div className="divide-y">
-            {companies.length === 0 ? <div className="p-8 text-center text-gray-500">
+            {loading ? (
+              <div className="p-8 text-center text-gray-500">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                Loading companies...
+              </div>
+            ) : filteredCompanies.length === 0 ? (
+              <div className="p-8 text-center text-gray-500">
                 No companies match your search criteria
-              </div> : companies.map(company => <div key={company.id} className="grid grid-cols-12 gap-4 p-4 hover:bg-gray-50">
+              </div>
+            ) : (
+              filteredCompanies.map(company => <div key={company.id} className="grid grid-cols-12 gap-4 p-4 hover:bg-gray-50">
                   <div className="col-span-4 sm:col-span-5">
                     <div className="font-medium">{company.name}</div>
                     <div className="text-sm text-gray-500">
@@ -153,14 +179,15 @@ const ListView: React.FC = () => {
                   <div className="col-span-2 sm:col-span-3">
                     <div className="flex flex-wrap gap-1">
                       {company.tags.map(tagId => {
-                  const tag = mockTags.find(t => t.id === tagId);
+                  const tag = tags.find(t => t.id === tagId);
                   return tag ? <span key={tag.id} className={`text-xs px-2 py-0.5 rounded-full text-white ${getTagColor(tag.priority)}`}>
                             {tag.name}
                           </span> : null;
                 })}
                     </div>
                   </div>
-                </div>)}
+                </div>)
+            )}
           </div>
         </div>
       </div>

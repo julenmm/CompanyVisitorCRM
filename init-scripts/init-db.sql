@@ -72,12 +72,12 @@ CREATE TABLE IF NOT EXISTS PERSON(
     address TEXT,
     city VARCHAR(255),
     state VARCHAR(255),
-    zip integer,
+    zip INTEGER,
     country VARCHAR(255),
     latitude DECIMAL(10,8),
     longitude DECIMAL(11,8),
-    office_id UUID FOREIGN KEY REFERENCES OFFICE(id),
-    company_id UUID FOREIGN KEY REFERENCES COMPANY(id),
+    office_id UUID REFERENCES OFFICE(id),
+    company_id UUID REFERENCES Company(id),
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -108,13 +108,13 @@ CREATE TABLE IF NOT EXISTS auth_user(
     last_login TIMESTAMP,
     date_joined TIMESTAMP NOT NULL DEFAULT NOW(),
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 -- User sessions table for token-based auth
 CREATE TABLE IF NOT EXISTS user_session(
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID FOREIGN KEY REFERENCES auth_user(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth_user(id) ON DELETE CASCADE,
     token_hash VARCHAR(255) NOT NULL,
     expires_at TIMESTAMP NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -124,7 +124,7 @@ CREATE TABLE IF NOT EXISTS user_session(
 -- Password reset tokens
 CREATE TABLE IF NOT EXISTS password_reset_token(
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID FOREIGN KEY REFERENCES auth_user(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth_user(id) ON DELETE CASCADE,
     token_hash VARCHAR(255) NOT NULL,
     expires_at TIMESTAMP NOT NULL,
     used BOOLEAN DEFAULT FALSE,
@@ -133,9 +133,9 @@ CREATE TABLE IF NOT EXISTS password_reset_token(
 
 CREATE TABLE IF NOT EXISTS USER_WORLD(
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID FOREIGN KEY REFERENCES auth_user(id),
-    company_id UUID FOREIGN KEY REFERENCES COMPANY(id),
-    taxonomy_interests_id UUID FOREIGN KEY REFERENCES TAXONOMY(id),
+    user_id UUID REFERENCES auth_user(id),
+    company_id UUID REFERENCES Company(id),
+    taxonomy_interests_id UUID REFERENCES TAXONOMY(id),
     world_companies_id UUID[],
     world_people_id UUID[],
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),

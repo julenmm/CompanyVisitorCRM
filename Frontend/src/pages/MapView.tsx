@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useRef, Component } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Circle, useMap, useMapEvents } from 'react-leaflet';
+import React, { useEffect, useState } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Circle, useMapEvents } from 'react-leaflet';
 import { SearchIcon, FilterIcon, ChevronDownIcon, PlusIcon, MinusIcon } from 'lucide-react';
-import { mockCompanies, mockTags, Company, Location, Tag } from '../utils/mockData';
+import { getAllCompanies, getAllTags, Company, Tag } from '../utils/api';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 // Fix for default marker icons in Leaflet with React
@@ -11,34 +11,17 @@ L.Icon.Default.mergeOptions({
   iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
   shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png'
 });
-// Component to set view and handle map events
+// Component to handle map click events for radius filter
 const MapController: React.FC<{
-  center: [number, number];
-  zoom: number;
-  onMove: (center: [number, number]) => void;
   onMapClick?: (position: [number, number]) => void;
   radiusFilterEnabled: boolean;
 }> = ({
-  center,
-  zoom,
-  onMove,
   onMapClick,
   radiusFilterEnabled
+}: {
+  onMapClick?: (position: [number, number]) => void;
+  radiusFilterEnabled: boolean;
 }) => {
-  const map = useMap();
-  useEffect(() => {
-    map.setView(center, zoom);
-  }, [center, zoom, map]);
-  useEffect(() => {
-    const handleMoveEnd = () => {
-      const center = map.getCenter();
-      onMove([center.lat, center.lng]);
-    };
-    map.on('moveend', handleMoveEnd);
-    return () => {
-      map.off('moveend', handleMoveEnd);
-    };
-  }, [map, onMove]);
   // Add click event handler
   useMapEvents({
     click: e => {
@@ -50,9 +33,11 @@ const MapController: React.FC<{
   return null;
 };
 const MapView: React.FC = () => {
-  const [companies, setCompanies] = useState<Company[]>(mockCompanies);
-  const [mapCenter, setMapCenter] = useState<[number, number]>([40, -95]); // Default to US center
-  const [zoom, setZoom] = useState(4);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [loading, setLoading] = useState(true);
+  const mapCenter: [number, number] = [40, -95]; // Default to US center
+  const zoom = 4;
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -65,18 +50,38 @@ const MapView: React.FC = () => {
     center: null,
     radius: 100 // km
   });
-  // Filter companies based on search term and tags
+
+  // Load data from API
   useEffect(() => {
-    let filtered = mockCompanies;
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        const [companiesData, tagsData] = await Promise.all([
+          getAllCompanies(),
+          getAllTags()
+        ]);
+        setCompanies(companiesData);
+        setTags(tagsData);
+      } catch (error) {
+        console.error('Error loading data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadData();
+  }, []);
+  // Filter companies based on search term and tags
+  const filteredCompanies = companies.filter(company => {
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(company => company.name.toLowerCase().includes(term));
+      if (!company.name.toLowerCase().includes(term)) return false;
     }
     if (selectedTags.length > 0) {
-      filtered = filtered.filter(company => selectedTags.some(tagId => company.tags.includes(tagId)));
+      if (!selectedTags.some(tagId => company.tags.includes(tagId))) return false;
     }
     if (radiusFilter.enabled && radiusFilter.center) {
-      filtered = filtered.filter(company => company.locations.some(location => {
+      if (!company.locations.some(location => {
         if (!radiusFilter.center) return false;
         // Calculate distance between points (Haversine formula)
         const lat1 = radiusFilter.center[0];
@@ -90,10 +95,11 @@ const MapView: React.FC = () => {
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         const distance = R * c; // Distance in km
         return distance <= radiusFilter.radius;
-      }));
+      })) return false;
     }
-    setCompanies(filtered);
-  }, [searchTerm, selectedTags, radiusFilter]);
+    return true;
+  });
+
   const toggleTag = (tagId: string) => {
     setSelectedTags(prev => prev.includes(tagId) ? prev.filter(id => id !== tagId) : [...prev, tagId]);
   };
@@ -103,11 +109,6 @@ const MapView: React.FC = () => {
       enabled: !prev.enabled,
       center: !prev.enabled ? mapCenter : prev.center
     }));
-  };
-  const handleMapMove = (center: [number, number]) => {
-    setMapCenter(center);
-    // We no longer update the radius filter center when moving the map
-    // This allows the radius filter to stay in place when panning
   };
   const handleMapClick = (position: [number, number]) => {
     // Update radius filter center when map is clicked
@@ -136,6 +137,17 @@ const MapView: React.FC = () => {
         return 'bg-gray-500';
     }
   };
+  if (loading) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading companies...</p>
+        </div>
+      </div>
+    );
+  }
+
   return <div className="h-full flex flex-col">
       {/* Search and Filter Bar */}
       <div className="bg-white p-4 border-b">
@@ -164,7 +176,7 @@ const MapView: React.FC = () => {
                     </h3>
                   </div>
                   <div className="p-3 max-h-60 overflow-y-auto">
-                    {mockTags.map(tag => <div key={tag.id} className="flex items-center mb-2">
+                    {tags.map(tag => <div key={tag.id} className="flex items-center mb-2">
                         <input type="checkbox" id={`tag-${tag.id}`} checked={selectedTags.includes(tag.id)} onChange={() => toggleTag(tag.id)} className="mr-2" />
                         <label htmlFor={`tag-${tag.id}`} className="flex items-center">
                           <span className={`w-3 h-3 rounded-full mr-2 ${getTagColor(tag.priority)}`}></span>
@@ -198,7 +210,7 @@ const MapView: React.FC = () => {
         width: '100%'
       }} center={mapCenter} zoom={zoom} scrollWheelZoom={true}>
           <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          <MapController center={mapCenter} zoom={zoom} onMove={handleMapMove} onMapClick={handleMapClick} radiusFilterEnabled={radiusFilter.enabled} />
+          <MapController onMapClick={handleMapClick} radiusFilterEnabled={radiusFilter.enabled} />
           {/* Radius circle */}
           {radiusFilter.enabled && radiusFilter.center && <Circle center={radiusFilter.center} radius={radiusFilter.radius * 1000} // Convert km to meters
         pathOptions={{
@@ -207,7 +219,7 @@ const MapView: React.FC = () => {
           fillOpacity: 0.1
         }} />}
           {/* Company markers */}
-          {companies.flatMap(company => company.locations.map(location => <Marker key={location.id} position={[location.coordinates.lat, location.coordinates.lon]}>
+          {filteredCompanies.flatMap(company => company.locations.map(location => <Marker key={location.id} position={[location.coordinates.lat, location.coordinates.lon]}>
                 <Popup>
                   <div>
                     <h3 className="font-bold">{company.name}</h3>
@@ -220,7 +232,7 @@ const MapView: React.FC = () => {
                       </span>}
                     <div className="mt-2 flex flex-wrap gap-1">
                       {company.tags.map(tagId => {
-                  const tag = mockTags.find(t => t.id === tagId);
+                  const tag = tags.find(t => t.id === tagId);
                   return tag ? <span key={tag.id} className={`text-xs px-2 py-0.5 rounded-full text-white ${getTagColor(tag.priority)}`}>
                             {tag.name}
                           </span> : null;
