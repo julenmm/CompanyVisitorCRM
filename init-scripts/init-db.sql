@@ -28,6 +28,14 @@ CREATE TABLE IF NOT EXISTS Company(
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS TAXONOMY(
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS TAXONOMY_RELATIONSHIP(
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     company_id UUID NOT NULL,
@@ -36,14 +44,6 @@ CREATE TABLE IF NOT EXISTS TAXONOMY_RELATIONSHIP(
     updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
     FOREIGN KEY (company_id) REFERENCES COMPANY(id),
     FOREIGN KEY (taxonomy_id) REFERENCES TAXONOMY(id)
-);
-
-CREATE TABLE IF NOT EXISTS TAXONOMY(
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS OFFICE(
@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS USER_DATA(
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 -- User authentication table (separate from person profile)
-CREATE TABLE IF NOT EXISTS auth_user(
+CREATE TABLE IF NOT EXISTS custom_auth_user(
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_data_id UUID REFERENCES USER_DATA(id),
     username VARCHAR(150) UNIQUE NOT NULL,
@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS auth_user(
 -- User sessions table for token-based auth
 CREATE TABLE IF NOT EXISTS user_session(
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID REFERENCES auth_user(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES custom_auth_user(id) ON DELETE CASCADE,
     token_hash VARCHAR(255) NOT NULL,
     expires_at TIMESTAMP NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -124,7 +124,7 @@ CREATE TABLE IF NOT EXISTS user_session(
 -- Password reset tokens
 CREATE TABLE IF NOT EXISTS password_reset_token(
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID REFERENCES auth_user(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES custom_auth_user(id) ON DELETE CASCADE,
     token_hash VARCHAR(255) NOT NULL,
     expires_at TIMESTAMP NOT NULL,
     used BOOLEAN DEFAULT FALSE,
@@ -133,7 +133,7 @@ CREATE TABLE IF NOT EXISTS password_reset_token(
 
 CREATE TABLE IF NOT EXISTS USER_WORLD(
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID REFERENCES auth_user(id),
+    user_id UUID REFERENCES custom_auth_user(id),
     company_id UUID REFERENCES Company(id),
     taxonomy_interests_id UUID REFERENCES TAXONOMY(id),
     world_companies_id UUID[],
@@ -171,10 +171,31 @@ CREATE TRIGGER update_person_updated_at
     FOR EACH ROW 
     EXECUTE FUNCTION update_updated_at_column();
 
--- Create triggers for auth_user table
-CREATE TRIGGER update_auth_user_updated_at 
-    BEFORE UPDATE ON auth_user 
-    FOR EACH ROW 
+-- Create triggers for custom_auth_user table
+CREATE TRIGGER update_custom_auth_user_updated_at 
+    BEFORE UPDATE ON custom_auth_user
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- OAuth accounts table for linking OAuth providers
+CREATE TABLE IF NOT EXISTS oauth_account(
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES custom_auth_user(id) ON DELETE CASCADE,
+    provider VARCHAR(50) NOT NULL,
+    provider_id VARCHAR(100) NOT NULL,
+    access_token TEXT,
+    refresh_token TEXT,
+    expires_at TIMESTAMP,
+    provider_data JSONB DEFAULT '{}',
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    UNIQUE(provider, provider_id)
+);
+
+-- Create trigger for oauth_account table
+CREATE TRIGGER update_oauth_account_updated_at 
+    BEFORE UPDATE ON oauth_account
+    FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
 -- Create triggers for TAXONOMY table

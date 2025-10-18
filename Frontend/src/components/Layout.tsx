@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { MapIcon, ListIcon, PlusIcon, MenuIcon, XIcon } from 'lucide-react';
+import { MapIcon, ListIcon, PlusIcon, MenuIcon, XIcon, LogOutIcon, UserIcon } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 const Layout: React.FC = () => {
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const { user, logout } = useAuth();
   return <div className="flex flex-col h-screen bg-gray-100">
       {/* Header */}
       <header className="bg-white shadow-sm">
@@ -13,7 +15,7 @@ const Layout: React.FC = () => {
               <span className="text-white font-bold">R</span>
             </div>
             <span className="font-semibold text-lg text-gray-800">
-              ResourceDB
+              CompanyMap
             </span>
           </div>
           <div className="hidden md:flex items-center space-x-4">
@@ -29,6 +31,20 @@ const Layout: React.FC = () => {
               <PlusIcon size={18} />
               <span>Add Client</span>
             </button>
+            {/* User menu */}
+            <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-2 text-sm text-gray-600">
+                <UserIcon size={16} />
+                <span>{user?.full_name || user?.username}</span>
+              </div>
+              <button 
+                onClick={logout}
+                className="flex items-center space-x-1 px-3 py-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-md"
+                title="Logout"
+              >
+                <LogOutIcon size={16} />
+              </button>
+            </div>
           </div>
           <button className="md:hidden text-gray-600" onClick={() => setIsMenuOpen(!isMenuOpen)}>
             {isMenuOpen ? <XIcon size={24} /> : <MenuIcon size={24} />}
