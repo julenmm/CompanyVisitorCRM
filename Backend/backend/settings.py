@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "django.contrib.sites",
     "rest_framework",
+    "drf_spectacular",
     "corsheaders",
     "django_filters",
     "allauth",
@@ -162,6 +163,7 @@ REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
     ],
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
 # Django Allauth settings
@@ -219,3 +221,11 @@ SOCIALACCOUNT_AUTO_SIGNUP = True
 # OAuth URLs
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/'
+
+# drf-spectacular settings
+SPECTACULAR_SETTINGS = {
+    "TITLE": "CompanyMap API",
+    "DESCRIPTION": "API documentation for CompanyMap endpoints",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+}

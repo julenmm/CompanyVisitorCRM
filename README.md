@@ -175,14 +175,7 @@ docker-compose logs frontend
 docker-compose logs postgres
 ```
 
-## Contributing
+## Data Sources
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
-
-## License
-
-This project is licensed under the MIT License.
+City data was obtained from:
+https://public.opendatasoft.com/explore/assets/geonames-all-cities-with-a-population-1000/export/?flg=en-us

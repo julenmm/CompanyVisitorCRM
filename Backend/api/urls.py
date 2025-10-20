@@ -1,6 +1,8 @@
 from django.urls import path
 from .views.auth_views import register, login, logout, get_user_profile
 from .views.oauth_views import google_oauth_login, facebook_oauth_login, get_oauth_urls
+from .views.location_view import LocationView
+from .views.company_views import CompanyViewSet
 
 urlpatterns = [
     # Traditional authentication
@@ -13,4 +15,9 @@ urlpatterns = [
     path('oauth/google/', google_oauth_login, name='google_oauth_login'),
     path('oauth/facebook/', facebook_oauth_login, name='facebook_oauth_login'),
     path('oauth/urls/', get_oauth_urls, name='oauth_urls'),
+    # Location endpoints
+    path('locations/search/', LocationView.as_view({'get': 'search_locations'}), name='search_locations'),
+    path('locations/coordinates/', LocationView.as_view({'get': 'get_coordinates'}), name='get_coordinates'),
+    # Company endpoints
+    path('companies/', CompanyViewSet.as_view({'get': 'get_user_companies', 'post': 'make_random_company_coordinates'}), name='company'),
 ]

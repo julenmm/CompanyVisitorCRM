@@ -1,12 +1,14 @@
 from django.db import models
-from .base import BaseModel
+from django.db.models.functions import Now
+from django.utils import timezone
 
 
-class UserSession(BaseModel):
+class UserSession(models.Model):
     """User session model for token-based authentication"""
     user = models.ForeignKey('AuthUser', on_delete=models.CASCADE, related_name='sessions')
     token_hash = models.CharField(max_length=255)
     expires_at = models.DateTimeField()
+    created_at = models.DateTimeField(db_default=Now())
     last_used_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -20,5 +22,7 @@ class UserSession(BaseModel):
 
     @property
     def is_expired(self):
-        from django.utils import timezone
-        return timezone.now() > self.expires_at
+        expires_at = self.expires_at
+        if timezone.is_naive(expires_at):
+            expires_at = timezone.make_aware(expires_at, timezone.get_current_timezone())
+        return timezone.now() > expires_at

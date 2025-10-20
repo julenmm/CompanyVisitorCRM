@@ -8,6 +8,7 @@ class Company(BaseModel):
     domain = models.CharField(max_length=255, unique=True)
     domains = models.JSONField(default=list, help_text="List of all company domains")
     description = models.TextField(blank=True, null=True)
+    default_industry = models.CharField(max_length=255, blank=True, null=True)
 
     class Meta:
         managed = False

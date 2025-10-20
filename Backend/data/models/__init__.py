@@ -11,6 +11,7 @@ from .user_session import UserSession
 from .password_reset_token import PasswordResetToken
 from .user_world import UserWorld
 from .oauth_account import OAuthAccount
+from .city import City
 
 __all__ = [
     'BaseModel',
@@ -25,4 +26,5 @@ __all__ = [
     'PasswordResetToken',
     'UserWorld',
     'OAuthAccount',
+    'City',
 ]

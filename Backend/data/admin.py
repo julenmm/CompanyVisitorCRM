@@ -85,7 +85,7 @@ class AuthUserAdmin(admin.ModelAdmin):
 @admin.register(UserSession)
 class UserSessionAdmin(admin.ModelAdmin):
     list_display = ['user', 'expires_at', 'last_used_at', 'is_expired']
-    list_filter = ['expires_at', 'created_at']
+    list_filter = ['expires_at']
     search_fields = ['user__username', 'user__email']
     raw_id_fields = ['user']
 

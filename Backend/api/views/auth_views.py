@@ -10,7 +10,9 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from data.models import AuthUser, UserData, Person, UserSession, PasswordResetToken
+import logging
 
+logger = logging.getLogger(__name__)
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -18,11 +20,11 @@ def register(request):
     """Register a new user"""
     try:
         data = request.data
-        username = data.get('username')
-        email = data.get('email')
-        password = data.get('password')
-        first_name = data.get('first_name', '')
-        last_name = data.get('last_name', '')
+        username = data['username']
+        email = data['email']
+        password = data['password']
+        first_name = data['first_name']
+        last_name = data['last_name']
         
         # Validate required fields
         if not all([username, email, password]):
@@ -81,6 +83,7 @@ def register(request):
             }, status=status.HTTP_201_CREATED)
             
     except Exception as e:
+        logger.error(f"Error registering user: {e}")
         return Response(
             {'error': str(e)}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -147,6 +150,7 @@ def login(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
+        logger.error(f"Error logging in: {e}")
         return Response(
             {'error': str(e)}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -178,6 +182,7 @@ def logout(request):
             )
             
     except Exception as e:
+        logger.error(f"Error logging out: {e}")
         return Response(
             {'error': str(e)}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -207,6 +212,7 @@ def get_user_profile(request):
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
+        logger.error(f"Error getting user profile: {e}")
         return Response(
             {'error': str(e)}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR

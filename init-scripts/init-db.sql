@@ -16,35 +16,54 @@ GRANT ALL PRIVILEGES ON DATABASE companymap_db TO companymap_user;
 -- Set timezone
 SET timezone = 'UTC';
 
+BEGIN;
 
-CREATE TABLE IF NOT EXISTS Company(
+-- 1️⃣ Create the base tables first (without foreign key dependencies)
+CREATE TABLE IF NOT EXISTS TAXONOMY (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS COMPANY (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(255) NOT NULL,
     domain VARCHAR(255) NOT NULL,
-    domains JSONB NOT NULL,
+    domains TEXT[],
+    default_insdustry VARCHAR(255),
     description TEXT,
-    taxonomies_id UUID,
+    taxonomies_id UUID, -- FK added later
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS TAXONOMY(
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS TAXONOMY_RELATIONSHIP(
+CREATE TABLE IF NOT EXISTS TAXONOMY_RELATIONSHIP (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     company_id UUID NOT NULL,
     taxonomy_id UUID NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    FOREIGN KEY (company_id) REFERENCES COMPANY(id),
-    FOREIGN KEY (taxonomy_id) REFERENCES TAXONOMY(id)
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+-- 2️⃣ Add foreign key constraints after all tables exist
+ALTER TABLE TAXONOMY_RELATIONSHIP
+    ADD CONSTRAINT fk_taxonomy_relationship_company
+    FOREIGN KEY (company_id) REFERENCES COMPANY(id)
+    ON DELETE CASCADE;
+
+ALTER TABLE TAXONOMY_RELATIONSHIP
+    ADD CONSTRAINT fk_taxonomy_relationship_taxonomy
+    FOREIGN KEY (taxonomy_id) REFERENCES TAXONOMY(id)
+    ON DELETE CASCADE;
+
+ALTER TABLE COMPANY
+    ADD CONSTRAINT fk_company_taxonomy_relationship
+    FOREIGN KEY (taxonomies_id) REFERENCES TAXONOMY_RELATIONSHIP(id)
+    ON DELETE SET NULL;
+
+COMMIT;
 
 CREATE TABLE IF NOT EXISTS OFFICE(
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -72,7 +91,7 @@ CREATE TABLE IF NOT EXISTS PERSON(
     address TEXT,
     city VARCHAR(255),
     state VARCHAR(255),
-    zip INTEGER,
+    zip VARCHAR(50),
     country VARCHAR(255),
     latitude DECIMAL(10,8),
     longitude DECIMAL(11,8),
@@ -111,6 +130,21 @@ CREATE TABLE IF NOT EXISTS custom_auth_user(
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+-- OAuth accounts table for linking OAuth providers
+CREATE TABLE IF NOT EXISTS oauth_account(
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES custom_auth_user(id) ON DELETE CASCADE,
+    provider VARCHAR(50) NOT NULL,
+    provider_id VARCHAR(100) NOT NULL,
+    access_token TEXT,
+    refresh_token TEXT,
+    expires_at TIMESTAMP,
+    provider_data JSONB DEFAULT '{}',
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    UNIQUE(provider, provider_id)
+);
+
 -- User sessions table for token-based auth
 CREATE TABLE IF NOT EXISTS user_session(
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -118,6 +152,7 @@ CREATE TABLE IF NOT EXISTS user_session(
     token_hash VARCHAR(255) NOT NULL,
     expires_at TIMESTAMP NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
     last_used_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -142,82 +177,171 @@ CREATE TABLE IF NOT EXISTS USER_WORLD(
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-
-
--- Create function to update updated_at timestamp
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
-END;
-$$ language 'plpgsql';
-
--- Create triggers for Company table
-CREATE TRIGGER update_company_updated_at 
-    BEFORE UPDATE ON Company 
-    FOR EACH ROW 
-    EXECUTE FUNCTION update_updated_at_column();
-
--- Create triggers for OFFICE table
-CREATE TRIGGER update_office_updated_at 
-    BEFORE UPDATE ON OFFICE 
-    FOR EACH ROW 
-    EXECUTE FUNCTION update_updated_at_column();
-
--- Create triggers for PERSON table
-CREATE TRIGGER update_person_updated_at 
-    BEFORE UPDATE ON PERSON 
-    FOR EACH ROW 
-    EXECUTE FUNCTION update_updated_at_column();
-
--- Create triggers for custom_auth_user table
-CREATE TRIGGER update_custom_auth_user_updated_at 
-    BEFORE UPDATE ON custom_auth_user
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
-
--- OAuth accounts table for linking OAuth providers
-CREATE TABLE IF NOT EXISTS oauth_account(
+CREATE TABLE IF NOT EXISTS CITY(
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID REFERENCES custom_auth_user(id) ON DELETE CASCADE,
-    provider VARCHAR(50) NOT NULL,
-    provider_id VARCHAR(100) NOT NULL,
-    access_token TEXT,
-    refresh_token TEXT,
-    expires_at TIMESTAMP,
-    provider_data JSONB DEFAULT '{}',
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    UNIQUE(provider, provider_id)
+    name VARCHAR(255) NOT NULL,
+    ascii_name VARCHAR(255) NOT NULL,
+    country VARCHAR(255) NOT NULL,
+    latitude DECIMAL(10,8),
+    longitude DECIMAL(11,8),
+    population INTEGER
 );
 
--- Create trigger for oauth_account table
-CREATE TRIGGER update_oauth_account_updated_at 
-    BEFORE UPDATE ON oauth_account
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
 
--- Create triggers for TAXONOMY table
-CREATE TRIGGER update_taxonomy_updated_at 
-    BEFORE UPDATE ON TAXONOMY 
-    FOR EACH ROW 
-    EXECUTE FUNCTION update_updated_at_column();
+-- One function: call as load_cities_from_csv(); or override default path with load_cities_from_csv('/path/file.csv')
+CREATE OR REPLACE FUNCTION public.load_cities_from_csv(
+  p_file text DEFAULT '/data/geonames-all-cities-with-a-population-1000.csv'
+)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  inserted_count integer;
+BEGIN
+  CREATE TEMP TABLE staging_cities(
+    "Geoname ID" BIGINT,
+    "Name" TEXT,
+    "ASCII Name" TEXT,
+    "Alternate Names" TEXT,
+    "Feature Class" TEXT,
+    "Feature Code" TEXT,
+    "Country Code" TEXT,
+    "Country name EN" TEXT,
+    "Country Code 2" TEXT,
+    "Admin1 Code" TEXT,
+    "Admin2 Code" TEXT,
+    "Admin3 Code" TEXT,
+    "Admin4 Code" TEXT,
+    "Population" TEXT,
+    "Elevation" TEXT,
+    "DIgital Elevation Model" TEXT,
+    "Timezone" TEXT,
+    "Modification date" TEXT,
+    "LABEL EN" TEXT,
+    "Coordinates" TEXT
+  ) ON COMMIT DROP;
 
--- Create triggers for TAXONOMY_RELATIONSHIP table
-CREATE TRIGGER update_taxonomy_relationship_updated_at 
-    BEFORE UPDATE ON TAXONOMY_RELATIONSHIP 
-    FOR EACH ROW 
-    EXECUTE FUNCTION update_updated_at_column();
+  -- Stream file to COPY and delete afterwards
+  EXECUTE format(
+    'COPY staging_cities FROM PROGRAM %L WITH (FORMAT csv, HEADER true, DELIMITER '';'' )',
+    'bash -lc "cat ' || p_file || ' && rm -f ' || p_file || '"'
+  );
 
--- Create triggers for USER_DATA table
-CREATE TRIGGER update_user_data_updated_at 
-    BEFORE UPDATE ON USER_DATA 
-    FOR EACH ROW 
-    EXECUTE FUNCTION update_updated_at_column();
+  INSERT INTO public.city (name, ascii_name, country, latitude, longitude, population)
+  SELECT
+    COALESCE(NULLIF("Name", ''), 'Unknown'),
+    COALESCE(NULLIF("ASCII Name", ''), COALESCE(NULLIF("Name", ''), 'Unknown')),
+    COALESCE(NULLIF("Country name EN", ''), COALESCE(NULLIF("Country Code", ''), 'Unknown')),
+    NULLIF(TRIM(split_part("Coordinates", ',', 1)), '')::DECIMAL(10,8),
+    NULLIF(TRIM(split_part("Coordinates", ',', 2)), '')::DECIMAL(11,8),
+    NULLIF(NULLIF("Population", ''), NULL)::INTEGER
+  FROM staging_cities;
 
--- Create triggers for USER_WORLD table
-CREATE TRIGGER update_user_world_updated_at 
-    BEFORE UPDATE ON USER_WORLD 
-    FOR EACH ROW 
-    EXECUTE FUNCTION update_updated_at_column();
+  GET DIAGNOSTICS inserted_count = ROW_COUNT;
+  RETURN inserted_count;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.load_cities_from_csv(text) TO companymap_user;
+SELECT public.load_cities_from_csv('/data/geonames-all-cities-with-a-population-1000.csv');
+
+
+
+
+
+
+-- Load companies from a CSV into COMPANY
+-- Expected CSV: free_company_dataset.csv in /data/
+-- Columns: country,founded,id,industry,linkedin_url,locality,name,region,size,website
+
+CREATE OR REPLACE FUNCTION public.load_companies_from_csv(
+  p_file text DEFAULT '/data/free_company_dataset.csv'
+)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  inserted_count integer;
+BEGIN
+  -- Staging table mirroring the CSV headers (all TEXT to be safe)
+  CREATE TEMP TABLE staging_companies (
+    country       TEXT,
+    founded       TEXT,
+    id            TEXT,   -- external PDL id (kept for de-dupe logic if desired)
+    industry      TEXT,
+    linkedin_url  TEXT,
+    locality      TEXT,
+    name          TEXT,
+    region        TEXT,
+    size          TEXT,
+    website       TEXT
+  ) ON COMMIT DROP;
+
+  -- Stream file to COPY and delete afterwards
+  EXECUTE format(
+    'COPY staging_companies FROM PROGRAM %L WITH (FORMAT csv, HEADER true, DELIMITER '','')',
+    'bash -lc "cat ' || p_file || ' && rm -f ' || p_file || '"'
+  );
+
+  /*
+    Derive domain:
+      - Prefer hostname from website (strip http(s)://, www., path, query).
+      - Fallback to hostname from linkedin_url (usually linkedin.com — not ideal, but better than NULL).
+      - Final fallback to 'unknown.local' to satisfy NOT NULL constraint on COMPANY.domain.
+    Map:
+      - name -> COMPANY.name
+      - industry -> COMPANY.default_insdustry  (schema uses this exact column name)
+      - domain -> COMPANY.domain
+      - domains -> single-element array with the derived domain (if you want; otherwise NULL)
+      - description left NULL (no description in free dataset)
+  */
+  WITH prepared AS (
+    SELECT
+      NULLIF(TRIM(name), '')                                          AS company_name,
+      -- Extract host from website (preferred)
+      LOWER(
+        NULLIF(
+          REGEXP_REPLACE(website, '^\s*(https?://)?(www\.)?([^/]+).*$','\3'),
+          ''
+        )
+      )                                                               AS host_from_website,
+      -- Extract host from linkedin_url (fallback)
+      LOWER(
+        NULLIF(
+          REGEXP_REPLACE(linkedin_url, '^\s*(https?://)?(www\.)?([^/]+).*$','\3'),
+          ''
+        )
+      )                                                               AS host_from_linkedin,
+      NULLIF(TRIM(industry), '')                                      AS industry_text
+    FROM staging_companies
+    WHERE NULLIF(TRIM(name), '') IS NOT NULL
+  ),
+  to_insert AS (
+    SELECT
+      company_name,
+      COALESCE(host_from_website, host_from_linkedin, 'unknown.local') AS derived_domain,
+      industry_text
+    FROM prepared
+  )
+  INSERT INTO public.company (name, domain, domains, default_insdustry)
+  SELECT
+    company_name,
+    derived_domain,
+    ARRAY[derived_domain]::TEXT[],
+    industry_text
+  FROM to_insert
+  -- simple duplicate guard: avoid inserting if a company with same domain already exists
+  WHERE NOT EXISTS (
+    SELECT 1 FROM public.company c
+    WHERE LOWER(c.domain) = LOWER(to_insert.derived_domain)
+  );
+
+  GET DIAGNOSTICS inserted_count = ROW_COUNT;
+  RETURN inserted_count;
+END;
+$$;
+-- Allow your app user to run it (optional but handy)
+GRANT EXECUTE ON FUNCTION public.load_companies_from_csv(text) TO companymap_user;
+SELECT public.load_companies_from_csv('/data/free_company_dataset.csv');

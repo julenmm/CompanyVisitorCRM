@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Circle, useMapEvents } from 'react-leaflet';
 import { SearchIcon, FilterIcon, ChevronDownIcon, PlusIcon, MinusIcon } from 'lucide-react';
-import { getAllCompanies, getAllTags, Company, Tag } from '../utils/api';
+import { getMyCompanies, getAllTags, Company, Tag, searchLocations, CitySuggestion, getCoordinatesByLocationId } from '../utils/api';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 // Fix for default marker icons in Leaflet with React
@@ -32,13 +32,26 @@ const MapController: React.FC<{
   });
   return null;
 };
+
+// Helper to recenter map when center changes, preserving current zoom
+const RecenterOnChange: React.FC<{ center: [number, number] }> = ({ center }) => {
+  const map = useMapEvents({});
+  useEffect(() => {
+    map.setView(center, map.getZoom());
+  }, [center, map]);
+  return null;
+};
 const MapView: React.FC = () => {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(true);
-  const mapCenter: [number, number] = [40, -95]; // Default to US center
+  const [mapCenter, setMapCenter] = useState<[number, number]>([40, -95]); // Default to US center
   const zoom = 4;
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchType, setSearchType] = useState<'city' | 'company'>('city');
+  const [isSearchTypeOpen, setIsSearchTypeOpen] = useState(false);
+  const [citySuggestions, setCitySuggestions] = useState<CitySuggestion[]>([]);
+  const [isCitySuggestionsOpen, setIsCitySuggestionsOpen] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [radiusFilter, setRadiusFilter] = useState<{
@@ -51,13 +64,46 @@ const MapView: React.FC = () => {
     radius: 100 // km
   });
 
+  const searchTypeRef = useRef<HTMLDivElement>(null);
+
+  // Close search type dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchTypeRef.current && !searchTypeRef.current.contains(event.target as Node)) {
+        setIsSearchTypeOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Debounced city search suggestions
+  useEffect(() => {
+    let active = true;
+    const handler = setTimeout(async () => {
+      if (searchType === 'city' && searchTerm.trim().length > 0) {
+        const results = await searchLocations(searchTerm.trim());
+        if (!active) return;
+        setCitySuggestions(results);
+        setIsCitySuggestionsOpen(true);
+      } else {
+        setCitySuggestions([]);
+        setIsCitySuggestionsOpen(false);
+      }
+    }, 250);
+    return () => {
+      active = false;
+      clearTimeout(handler);
+    };
+  }, [searchTerm, searchType]);
+
   // Load data from API
   useEffect(() => {
     const loadData = async () => {
       try {
         setLoading(true);
         const [companiesData, tagsData] = await Promise.all([
-          getAllCompanies(),
+          getMyCompanies(),
           getAllTags()
         ]);
         setCompanies(companiesData);
@@ -75,7 +121,10 @@ const MapView: React.FC = () => {
   const filteredCompanies = companies.filter(company => {
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      if (!company.name.toLowerCase().includes(term)) return false;
+      const matches = searchType === 'company'
+        ? company.name.toLowerCase().includes(term)
+        : company.locations.some(loc => loc.city.toLowerCase().includes(term));
+      if (!matches) return false;
     }
     if (selectedTags.length > 0) {
       if (!selectedTags.some(tagId => company.tags.includes(tagId))) return false;
@@ -150,11 +199,87 @@ const MapView: React.FC = () => {
 
   return <div className="h-full flex flex-col">
       {/* Search and Filter Bar */}
-      <div className="bg-white p-4 border-b">
+      <div className="relative z-[2000] bg-white p-4 border-b">
         <div className="flex flex-col md:flex-row gap-3">
-          <div className="relative flex-1">
-            <SearchIcon size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-            <input type="text" placeholder="Search companies..." className="w-full pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+          <div className="flex items-center gap-2 flex-1">
+            <div className="relative w-36" ref={searchTypeRef}>
+              <button
+                type="button"
+                aria-haspopup="listbox"
+                aria-expanded={isSearchTypeOpen}
+                className={`flex items-center justify-between w-full pl-3 pr-3 py-2 border rounded-md bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 ${isSearchTypeOpen ? 'ring-2 ring-blue-500' : ''}`}
+                onClick={() => setIsSearchTypeOpen(prev => !prev)}
+              >
+                <span className="capitalize">{searchType}</span>
+                <ChevronDownIcon size={16} className="text-gray-500" />
+              </button>
+              {isSearchTypeOpen && (
+                <div className="absolute left-0 top-full mt-1 w-full bg-white border rounded-md shadow-lg z-[2100]">
+                  <ul role="listbox" aria-activedescendant={`search-type-${searchType}`} className="py-1">
+                    <li>
+                      <button
+                        id="search-type-city"
+                        role="option"
+                        aria-selected={searchType === 'city'}
+                        className={`w-full text-left px-3 py-2 hover:bg-gray-50 ${searchType === 'city' ? 'bg-blue-50 text-blue-700' : 'text-gray-700'}`}
+                        onClick={() => {
+                          setSearchType('city');
+                          setIsSearchTypeOpen(false);
+                        }}
+                      >
+                        City
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        id="search-type-company"
+                        role="option"
+                        aria-selected={searchType === 'company'}
+                        className={`w-full text-left px-3 py-2 hover:bg-gray-50 ${searchType === 'company' ? 'bg-blue-50 text-blue-700' : 'text-gray-700'}`}
+                        onClick={() => {
+                          setSearchType('company');
+                          setIsSearchTypeOpen(false);
+                        }}
+                      >
+                        Company
+                      </button>
+                    </li>
+                  </ul>
+                </div>
+              )}
+            </div>
+            <div className="relative flex-1">
+              <SearchIcon size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                placeholder=""
+                className="w-full pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+              />
+              {isCitySuggestionsOpen && searchType === 'city' && citySuggestions.length > 0 && (
+                <div className="absolute left-0 top-full mt-1 w-full bg-white border rounded-md shadow-lg z-[2200] max-h-64 overflow-auto">
+                  <ul>
+                    {citySuggestions.map(s => (
+                      <li key={s.id}>
+                        <button
+                          className="w-full text-left px-3 py-2 hover:bg-gray-50 text-gray-700 flex justify-between"
+                          onClick={async () => {
+                            const coords = await getCoordinatesByLocationId(s.id);
+                            if (coords && typeof coords.latitude === 'number' && typeof coords.longitude === 'number') {
+                              setMapCenter([coords.latitude, coords.longitude]);
+                            }
+                            setIsCitySuggestionsOpen(false);
+                          }}
+                        >
+                          <span>{s.ascii_name}, {s.country}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           </div>
           <div className="flex space-x-2">
             <button className={`flex items-center px-4 py-2 border rounded-md ${radiusFilter.enabled ? 'bg-blue-50 border-blue-500 text-blue-600' : 'bg-white text-gray-700'}`} onClick={toggleRadiusFilter}>
@@ -163,13 +288,25 @@ const MapView: React.FC = () => {
                   {radiusFilter.radius} km
                 </span>}
             </button>
+            {radiusFilter.enabled && <div className="hidden md:flex items-center space-x-2 px-3 py-2 border rounded-md bg-white">
+                <button className="p-1 hover:bg-gray-100 rounded" onClick={() => adjustRadius(-1)} aria-label="Decrease radius">
+                  <MinusIcon size={16} />
+                </button>
+                <input type="range" min="1" max="500" step="1" value={radiusFilter.radius} onChange={e => setRadiusFilter(prev => ({
+            ...prev,
+            radius: parseInt(e.target.value)
+          }))} className="w-40" />
+                <button className="p-1 hover:bg-gray-100 rounded" onClick={() => adjustRadius(1)} aria-label="Increase radius">
+                  <PlusIcon size={16} />
+                </button>
+              </div>}
             <div className="relative">
               <button className="flex items-center space-x-1 px-4 py-2 border rounded-md bg-white text-gray-700" onClick={() => setIsFilterOpen(!isFilterOpen)}>
                 <FilterIcon size={18} />
                 <span>Filter</span>
                 <ChevronDownIcon size={18} />
               </button>
-              {isFilterOpen && <div className="absolute right-0 mt-2 w-64 bg-white rounded-md shadow-lg z-50 border">
+              {isFilterOpen && <div className="absolute right-0 mt-2 w-64 bg-white rounded-md shadow-lg z-[2100] border">
                   <div className="p-3 border-b">
                     <h3 className="font-medium text-gray-700">
                       Filter by Tags
@@ -210,6 +347,7 @@ const MapView: React.FC = () => {
         width: '100%'
       }} center={mapCenter} zoom={zoom} scrollWheelZoom={true}>
           <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+          <RecenterOnChange center={mapCenter} />
           <MapController onMapClick={handleMapClick} radiusFilterEnabled={radiusFilter.enabled} />
           {/* Radius circle */}
           {radiusFilter.enabled && radiusFilter.center && <Circle center={radiusFilter.center} radius={radiusFilter.radius * 1000} // Convert km to meters
@@ -242,26 +380,7 @@ const MapView: React.FC = () => {
                 </Popup>
               </Marker>))}
         </MapContainer>
-        {/* Radius adjustment controls */}
-        {radiusFilter.enabled && <div className="absolute top-4 right-4 flex flex-col bg-white rounded-lg shadow-lg overflow-hidden z-40">
-            <div className="p-2 text-center text-sm font-medium border-b">
-              {radiusFilter.radius} km
-            </div>
-            <div className="flex">
-              <button className="p-3 hover:bg-gray-100 border-r" onClick={() => adjustRadius(-1)} aria-label="Decrease radius">
-                <MinusIcon size={18} />
-              </button>
-              <button className="p-3 hover:bg-gray-100" onClick={() => adjustRadius(1)} aria-label="Increase radius">
-                <PlusIcon size={18} />
-              </button>
-            </div>
-            <div className="px-2 py-3">
-              <input type="range" min="1" max="500" step="1" value={radiusFilter.radius} onChange={e => setRadiusFilter(prev => ({
-            ...prev,
-            radius: parseInt(e.target.value)
-          }))} className="w-full" />
-            </div>
-          </div>}
+        {/* Radius controls moved into toolbar above map */}
         {/* Instructions overlay - moved to top-left with higher z-index */}
         {radiusFilter.enabled && <div className="absolute top-4 left-4 bg-white bg-opacity-90 px-4 py-2 rounded-md shadow-md z-40">
             <p className="text-sm text-gray-700">

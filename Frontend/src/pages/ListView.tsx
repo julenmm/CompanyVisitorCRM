@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { SearchIcon, FilterIcon, ChevronDownIcon, MapPinIcon, UsersIcon, TagIcon, ArrowUpDownIcon } from 'lucide-react';
-import { getAllCompanies, getAllTags, Company, Tag } from '../utils/api';
+import { getMyCompanies, getAllTags, Company, Tag } from '../utils/api';
 const ListView: React.FC = () => {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
@@ -17,7 +17,7 @@ const ListView: React.FC = () => {
       try {
         setLoading(true);
         const [companiesData, tagsData] = await Promise.all([
-          getAllCompanies(),
+          getMyCompanies(),
           getAllTags()
         ]);
         setCompanies(companiesData);
