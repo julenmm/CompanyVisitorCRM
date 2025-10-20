@@ -130,3 +130,4 @@ public
 # Temporary folders
 tmp/
 temp/
+init-scripts/static_data/
