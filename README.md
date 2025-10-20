@@ -179,3 +179,5 @@ docker-compose logs postgres
 
 City data was obtained from:
 https://public.opendatasoft.com/explore/assets/geonames-all-cities-with-a-population-1000/export/?flg=en-us
+Company data was obtained from:
+https://docs.peopledatalabs.com/docs/free-company-dataset?utm_source=chatgpt.com
